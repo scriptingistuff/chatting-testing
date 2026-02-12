@@ -4,7 +4,7 @@ local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 
 -- CONFIGURATION
-local GEMINI_KEY = "AIzaSyCHY8czUeX0no0TPFtHhzbepoELXkb3Fa8"
+local GROQ_KEY = "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" 
 local FIREBASE_URL = "https://robloxchat-44691-default-rtdb.europe-west1.firebasedatabase.app" 
 local DB_PATH = FIREBASE_URL .. "/chat.json"
 
@@ -20,9 +20,9 @@ Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 15)
 
 local Stroke = Instance.new("UIStroke", MainFrame)
 Stroke.Thickness = 2
-Stroke.Color = Color3.fromRGB(0, 170, 255)
+Stroke.Color = Color3.fromRGB(246, 173, 85) -- Groq Orange
 
--- Header Area (Draggable Title Bar)
+-- Header
 local Header = Instance.new("Frame", MainFrame)
 Header.Size = UDim2.new(1, 0, 0, 40)
 Header.BackgroundTransparency = 1
@@ -30,7 +30,7 @@ Header.BackgroundTransparency = 1
 local Title = Instance.new("TextLabel", Header)
 Title.Size = UDim2.new(1, -80, 1, 0)
 Title.Position = UDim2.new(0, 15, 0, 0)
-Title.Text = "Chat" -- RENAMED
+Title.Text = "Chat"
 Title.TextColor3 = Color3.new(1, 1, 1)
 Title.BackgroundTransparency = 1
 Title.Font = Enum.Font.GothamBold
@@ -53,7 +53,6 @@ end
 local CloseBtn = createBtn("×", Color3.fromRGB(220, 70, 70), UDim2.new(1, -35, 0, 8))
 local MinBtn = createBtn("-", Color3.fromRGB(60, 60, 75), UDim2.new(1, -65, 0, 8))
 
--- Chat Display Area
 local Scroll = Instance.new("ScrollingFrame", MainFrame)
 Scroll.Size = UDim2.new(0.9, 0, 0.65, 0)
 Scroll.Position = UDim2.new(0.05, 0, 0.15, 0)
@@ -71,20 +70,19 @@ Output.Font = Enum.Font.GothamMedium
 Output.TextSize = 14
 Output.TextYAlignment = Enum.TextYAlignment.Top
 Output.BackgroundTransparency = 1
-Output.Text = "Connecting to Global Chat...\n"
+Output.Text = "System: Connected. Use /gemini [msg] for AI."
 
 local Input = Instance.new("TextBox", MainFrame)
 Input.Size = UDim2.new(0.9, 0, 0, 35)
 Input.Position = UDim2.new(0.05, 0, 0.86, 0)
 Input.BackgroundColor3 = Color3.fromRGB(25, 27, 40)
 Input.TextColor3 = Color3.new(1, 1, 1)
-Input.PlaceholderText = "Type message here..."
-Input.Font = Enum.Font.Gotham
+Input.PlaceholderText = "Type here..."
 Instance.new("UICorner", Input)
 
---- LOGIC FUNCTIONS ---
+-- FUNCTIONS --
 
-local function postMessage(msg, senderName)
+local function postToFirebase(msg, senderName)
     local payload = HttpService:JSONEncode({
         user = senderName or Players.LocalPlayer.Name,
         text = msg,
@@ -92,29 +90,51 @@ local function postMessage(msg, senderName)
     })
     local request = (syn and syn.request) or (http and http.request) or request
     pcall(function()
-        request({Url = DB_PATH, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = payload})
+        request({
+            Url = DB_PATH, 
+            Method = "POST", 
+            Headers = {["Content-Type"] = "application/json"}, 
+            Body = payload
+        })
     end)
 end
 
-local function askGemini(question)
-    local url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" .. GEMINI_KEY
-    local payload = HttpService:JSONEncode({contents = {{parts = {{text = question}}}}})
+local function askGroq(question)
+    local url = "https://api.groq.com/openai/v1/chat/completions"
+    local payload = HttpService:JSONEncode({
+        model = "llama3-8b-8192",
+        messages = {{role = "user", content = question}}
+    })
+    
     local request = (syn and syn.request) or (http and http.request) or request
-    local success, response = pcall(function() return request({Url = url, Method = "POST", Body = payload}) end)
+    local success, response = pcall(function()
+        return request({
+            Url = url,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "Bearer " .. GROQ_KEY
+            },
+            Body = payload
+        })
+    end)
+    
     if success and response.Success then
         local data = HttpService:JSONDecode(response.Body)
-        postMessage(data.candidates[1].content.parts[1].text, "✨ GEMINI")
+        local aiReply = data.choices[1].message.content
+        -- This posts the AI's answer to the global chat for everyone
+        postToFirebase(aiReply, "🤖 GROQ")
     end
 end
 
--- Sorting loop (Discord Style)
+-- Sorting loop (The "WhatsApp/Discord" Flow)
 task.spawn(function()
     while task.wait(3) do
         local request = (syn and syn.request) or (http and http.request) or request
         local success, res = pcall(function() return request({Url = DB_PATH, Method = "GET"}) end)
         if success and res.Success then
             local data = HttpService:JSONDecode(res.Body)
-            if data then
+            if type(data) == "table" then
                 local messageList = {}
                 for id, entry in pairs(data) do table.insert(messageList, entry) end
                 table.sort(messageList, function(a, b) return (a.time or 0) < (b.time or 0) end)
@@ -130,24 +150,35 @@ task.spawn(function()
     end
 end)
 
---- GUI CONTROLS ---
+-- CONTROLS & INPUT --
+Input.FocusLost:Connect(function(enter)
+    if enter and Input.Text ~= "" then
+        local t = Input.Text
+        Input.Text = ""
+        
+        -- Check for /gemini command
+        if t:sub(1,8):lower() == "/gemini " then
+            local question = t:sub(9)
+            postToFirebase(t) -- Post your question to global first
+            askGroq(question) -- Then ask Groq for the answer
+        else
+            postToFirebase(t) -- Just post a normal message
+        end
+    end
+end)
 
--- Minimize
+-- Minimize/Close/Drag Logic
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     local targetSize = minimized and UDim2.new(0, 320, 0, 40) or UDim2.new(0, 320, 0, 350)
     TweenService:Create(MainFrame, TweenInfo.new(0.3), {Size = targetSize}):Play()
-    Scroll.Visible = not minimized
-    Input.Visible = not minimized
-    MinBtn.Text = minimized and "+" or "-"
+    Scroll.Visible, Input.Visible, MinBtn.Text = not minimized, not minimized, (minimized and "+" or "-")
 end)
 
--- Close
 CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
 
--- Dragging
-local dragging, dragInput, dragStart, startPos
+local dragging, dragStart, startPos
 Header.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true dragStart = input.Position startPos = MainFrame.Position
@@ -160,17 +191,3 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
-
--- Send Logic
-Input.FocusLost:Connect(function(enter)
-    if enter and Input.Text ~= "" then
-        local t = Input.Text
-        Input.Text = ""
-        if t:sub(1,4):lower() == "/ai " then
-            postMessage(t) 
-            askGemini(t:sub(5))
-        else
-            postMessage(t)
-        end
-    end
-end)
