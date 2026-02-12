@@ -18,11 +18,11 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(12, 14, 22)
 MainFrame.ClipsDescendants = true
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 15)
 
+-- RESTORED: THE BLUE COLLAR (OUTLINE)
 local Stroke = Instance.new("UIStroke", MainFrame)
 Stroke.Thickness = 2
-Stroke.Color = Color3.fromRGB(246, 173, 85) -- Groq Orange
+Stroke.Color = Color3.fromRGB(0, 170, 255) -- Deep Sky Blue
 
--- Header
 local Header = Instance.new("Frame", MainFrame)
 Header.Size = UDim2.new(1, 0, 0, 40)
 Header.BackgroundTransparency = 1
@@ -37,7 +37,6 @@ Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
 Title.TextXAlignment = Enum.TextXAlignment.Left
 
--- Buttons
 local function createBtn(text, color, pos)
     local btn = Instance.new("TextButton", MainFrame)
     btn.Size = UDim2.new(0, 25, 0, 25)
@@ -70,17 +69,17 @@ Output.Font = Enum.Font.GothamMedium
 Output.TextSize = 14
 Output.TextYAlignment = Enum.TextYAlignment.Top
 Output.BackgroundTransparency = 1
-Output.Text = "System: Connected. Use /gemini [msg] for AI."
+Output.Text = "System: Connected. Use /gemini to ask Groq AI."
 
 local Input = Instance.new("TextBox", MainFrame)
 Input.Size = UDim2.new(0.9, 0, 0, 35)
 Input.Position = UDim2.new(0.05, 0, 0.86, 0)
 Input.BackgroundColor3 = Color3.fromRGB(25, 27, 40)
 Input.TextColor3 = Color3.new(1, 1, 1)
-Input.PlaceholderText = "Type here..."
+Input.PlaceholderText = "Type message..."
 Instance.new("UICorner", Input)
 
--- FUNCTIONS --
+-- LOGIC FUNCTIONS --
 
 local function postToFirebase(msg, senderName)
     local payload = HttpService:JSONEncode({
@@ -122,12 +121,11 @@ local function askGroq(question)
     if success and response.Success then
         local data = HttpService:JSONDecode(response.Body)
         local aiReply = data.choices[1].message.content
-        -- This posts the AI's answer to the global chat for everyone
         postToFirebase(aiReply, "🤖 GROQ")
     end
 end
 
--- Sorting loop (The "WhatsApp/Discord" Flow)
+-- Update Loop (Discord Flow)
 task.spawn(function()
     while task.wait(3) do
         local request = (syn and syn.request) or (http and http.request) or request
@@ -156,18 +154,17 @@ Input.FocusLost:Connect(function(enter)
         local t = Input.Text
         Input.Text = ""
         
-        -- Check for /gemini command
+        -- FIXED: Trigger Groq if message starts with /gemini
         if t:sub(1,8):lower() == "/gemini " then
             local question = t:sub(9)
-            postToFirebase(t) -- Post your question to global first
-            askGroq(question) -- Then ask Groq for the answer
+            postToFirebase(t) -- Posts your "/gemini hello?" so others see it
+            askGroq(question) -- Triggers the AI
         else
-            postToFirebase(t) -- Just post a normal message
+            postToFirebase(t) -- Just normal chat
         end
     end
 end)
 
--- Minimize/Close/Drag Logic
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
