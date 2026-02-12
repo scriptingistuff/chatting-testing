@@ -18,10 +18,11 @@ MainFrame.BackgroundColor3 = Color3.fromRGB(12, 14, 22)
 MainFrame.ClipsDescendants = true
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 15)
 
--- RESTORED: THE BLUE COLLAR (OUTLINE)
+-- THE BLUE COLLAR
 local Stroke = Instance.new("UIStroke", MainFrame)
-Stroke.Thickness = 2
-Stroke.Color = Color3.fromRGB(0, 170, 255) -- Deep Sky Blue
+Stroke.Thickness = 3
+Stroke.Color = Color3.fromRGB(0, 170, 255) 
+Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 
 local Header = Instance.new("Frame", MainFrame)
 Header.Size = UDim2.new(1, 0, 0, 40)
@@ -30,35 +31,22 @@ Header.BackgroundTransparency = 1
 local Title = Instance.new("TextLabel", Header)
 Title.Size = UDim2.new(1, -80, 1, 0)
 Title.Position = UDim2.new(0, 15, 0, 0)
-Title.Text = "Chat"
+Title.Text = "Chat" -- Reverted to old title
 Title.TextColor3 = Color3.new(1, 1, 1)
 Title.BackgroundTransparency = 1
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
 Title.TextXAlignment = Enum.TextXAlignment.Left
 
-local function createBtn(text, color, pos)
-    local btn = Instance.new("TextButton", MainFrame)
-    btn.Size = UDim2.new(0, 25, 0, 25)
-    btn.Position = pos
-    btn.BackgroundColor3 = color
-    btn.Text = text
-    btn.TextColor3 = Color3.new(1,1,1)
-    btn.Font = Enum.Font.GothamBold
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
-    return btn
-end
-
-local CloseBtn = createBtn("×", Color3.fromRGB(220, 70, 70), UDim2.new(1, -35, 0, 8))
-local MinBtn = createBtn("-", Color3.fromRGB(60, 60, 75), UDim2.new(1, -65, 0, 8))
-
+-- SCROLLING AREA
 local Scroll = Instance.new("ScrollingFrame", MainFrame)
 Scroll.Size = UDim2.new(0.9, 0, 0.65, 0)
 Scroll.Position = UDim2.new(0.05, 0, 0.15, 0)
 Scroll.BackgroundTransparency = 1
-Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-Scroll.ScrollBarThickness = 3
+Scroll.ScrollBarThickness = 4
+Scroll.ScrollBarImageColor3 = Color3.fromRGB(0, 170, 255)
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 0) 
+Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y 
 
 local Output = Instance.new("TextLabel", Scroll)
 Output.Size = UDim2.new(1, 0, 0, 0)
@@ -69,17 +57,17 @@ Output.Font = Enum.Font.GothamMedium
 Output.TextSize = 14
 Output.TextYAlignment = Enum.TextYAlignment.Top
 Output.BackgroundTransparency = 1
-Output.Text = "System: Connected. Use /gemini to ask Groq AI."
+Output.Text = "System: Online. Use /gemini [msg] for AI."
 
 local Input = Instance.new("TextBox", MainFrame)
 Input.Size = UDim2.new(0.9, 0, 0, 35)
 Input.Position = UDim2.new(0.05, 0, 0.86, 0)
 Input.BackgroundColor3 = Color3.fromRGB(25, 27, 40)
 Input.TextColor3 = Color3.new(1, 1, 1)
-Input.PlaceholderText = "Type message..."
+Input.PlaceholderText = "Message Chat" -- Updated placeholder
 Instance.new("UICorner", Input)
 
--- LOGIC FUNCTIONS --
+-- LOGIC --
 
 local function postToFirebase(msg, senderName)
     local payload = HttpService:JSONEncode({
@@ -89,43 +77,31 @@ local function postToFirebase(msg, senderName)
     })
     local request = (syn and syn.request) or (http and http.request) or request
     pcall(function()
-        request({
-            Url = DB_PATH, 
-            Method = "POST", 
-            Headers = {["Content-Type"] = "application/json"}, 
-            Body = payload
-        })
+        request({Url = DB_PATH, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = payload})
     end)
 end
 
-local function askGroq(question)
+local function askGemini(question)
     local url = "https://api.groq.com/openai/v1/chat/completions"
     local payload = HttpService:JSONEncode({
-        model = "llama3-8b-8192",
+        model = "llama-3.3-70b-versatile",
         messages = {{role = "user", content = question}}
     })
-    
     local request = (syn and syn.request) or (http and http.request) or request
     local success, response = pcall(function()
         return request({
-            Url = url,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json",
-                ["Authorization"] = "Bearer " .. GROQ_KEY
-            },
+            Url = url, Method = "POST", 
+            Headers = {["Content-Type"] = "application/json", ["Authorization"] = "Bearer " .. GROQ_KEY},
             Body = payload
         })
     end)
-    
     if success and response.Success then
         local data = HttpService:JSONDecode(response.Body)
-        local aiReply = data.choices[1].message.content
-        postToFirebase(aiReply, "🤖 GROQ")
+        postToFirebase(data.choices[1].message.content, "✨ GEMINI")
     end
 end
 
--- Update Loop (Discord Flow)
+-- Update Loop
 task.spawn(function()
     while task.wait(3) do
         local request = (syn and syn.request) or (http and http.request) or request
@@ -141,38 +117,60 @@ task.spawn(function()
                 for _, entry in ipairs(messageList) do
                     finalLog = finalLog .. "[" .. tostring(entry.user) .. "]: " .. tostring(entry.text) .. "\n"
                 end
+                
+                local isAtBottom = Scroll.CanvasPosition.Y >= (Scroll.AbsoluteCanvasSize.Y - Scroll.AbsoluteSize.Y - 30)
                 Output.Text = finalLog
-                Scroll.CanvasPosition = Vector2.new(0, Output.AbsoluteSize.Y + 1000)
+                
+                if isAtBottom then
+                    task.wait(0.1)
+                    Scroll.CanvasPosition = Vector2.new(0, Scroll.AbsoluteCanvasSize.Y)
+                end
             end
         end
     end
 end)
 
--- CONTROLS & INPUT --
+-- Input
 Input.FocusLost:Connect(function(enter)
     if enter and Input.Text ~= "" then
         local t = Input.Text
         Input.Text = ""
         
-        -- FIXED: Trigger Groq if message starts with /gemini
-        if t:sub(1,8):lower() == "/gemini " then
-            local question = t:sub(9)
-            postToFirebase(t) -- Posts your "/gemini hello?" so others see it
-            askGroq(question) -- Triggers the AI
+        -- Local instant display
+        Output.Text = Output.Text .. "[" .. Players.LocalPlayer.Name .. "]: " .. t .. "\n"
+        Scroll.CanvasPosition = Vector2.new(0, Scroll.AbsoluteCanvasSize.Y + 100)
+
+        local command = t:match("^/gemini%s+(.*)")
+        if command then
+            postToFirebase(t)
+            task.spawn(function() askGemini(command) end)
         else
-            postToFirebase(t) -- Just normal chat
+            postToFirebase(t)
         end
     end
 end)
 
+-- Buttons & Dragging
+local function createBtn(text, color, pos)
+    local btn = Instance.new("TextButton", MainFrame)
+    btn.Size = UDim2.new(0, 25, 0, 25)
+    btn.Position = pos
+    btn.BackgroundColor3 = color
+    btn.Text = text
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
+    return btn
+end
+local CloseBtn = createBtn("×", Color3.fromRGB(220, 70, 70), UDim2.new(1, -35, 0, 8))
+local MinBtn = createBtn("-", Color3.fromRGB(60, 60, 75), UDim2.new(1, -65, 0, 8))
+
 local minimized = false
 MinBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
-    local targetSize = minimized and UDim2.new(0, 320, 0, 40) or UDim2.new(0, 320, 0, 350)
-    TweenService:Create(MainFrame, TweenInfo.new(0.3), {Size = targetSize}):Play()
+    MainFrame:TweenSize(minimized and UDim2.new(0, 320, 0, 40) or UDim2.new(0, 320, 0, 350), "Out", "Quad", 0.3, true)
     Scroll.Visible, Input.Visible, MinBtn.Text = not minimized, not minimized, (minimized and "+" or "-")
 end)
-
 CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
 
 local dragging, dragStart, startPos
